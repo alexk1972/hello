@@ -1,0 +1,50 @@
+on: [push]
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    
+    - uses: azure/docker-login@v1
+      with:
+        login-server: akscoursealexkau.azurecr.io
+        username: ${{ secrets.acr_akscoursealexkau_username }}
+        password: ${{ secrets.acr_akscoursealexkau_password }}
+    
+    - name: Build and push image to ACR
+      id: build-image
+      run: |
+        docker build "$GITHUB_WORKSPACE/" -f  "Dockerfile" -t akscoursealexkau.azurecr.io/akscalexkau:${{ github.sha }} --label dockerfile-path=Dockerfile
+        docker push akscoursealexkau.azurecr.io/akscalexkau:${{ github.sha }}
+    
+    - uses: azure/k8s-set-context@v1
+      with:
+         kubeconfig: ${{ secrets.aks_akscalexkau_kubeConfig }}
+      id: login
+    
+    - name: Create namespace
+      run: |
+        namespacePresent=`kubectl get namespace | grep aksc-alexkaua60c | wc -l`
+        if [ $namespacePresent -eq 0 ]
+        then
+            echo `kubectl create namespace aksc-alexkaua60c`
+        fi
+
+    - uses: azure/k8s-create-secret@v1
+      with:
+        namespace: aksc-alexkaua60c
+        container-registry-url: akscoursealexkau.azurecr.io
+        container-registry-username: ${{ secrets.acr_akscoursealexkau_username }}
+        container-registry-password: ${{ secrets.acr_akscoursealexkau_password }}
+        secret-name: akscalexkaudockerauth
+       
+    - uses: azure/k8s-deploy@v1.2
+      with:
+        namespace: aksc-alexkaua60c
+        manifests: |
+          manifests/deployment-7.yml
+          manifests/service-7.yml
+        images: |
+          akscoursealexkau.azurecr.io/akscalexkau:${{ github.sha }}
+        imagepullsecrets: |
+          akscalexkaudockerauth
